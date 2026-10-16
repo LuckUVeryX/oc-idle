@@ -1,0 +1,41 @@
+{
+  "name": "oc-idle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Idle session compaction for OpenCode, built with Effect v4",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "bun --bun tsc -p tsconfig.json",
+    "test": "bun --bun vitest run",
+    "check": "bun run typecheck"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "^0.53.1",
+    "@effect/vitest": "4.0.1",
+    "@opencode/plugin": "^2.0.30",
+    "@opencode/schema": "^2.0.30",
+    "effect": "^4.0.1",
+    "typescript": "^7.0.2",
+    "vitest": "5.0.2",
+    "vitest-mock-extended": "5.1.1"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "^2.0.30",
+    "effect": "^4.0.1"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "packageManager": "bun@1.4.2"
+}
