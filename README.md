@@ -1,5 +1,7 @@
 # oc-idle
 
+An Effect v4 port of [vimtor's opencode-idle-compaction](https://github.com/vimtor/opencode-plugins/blob/main/packages/opencode-idle-compaction/plugin/src/server.ts).
+
 Compacts OpenCode sessions after 54 idle minutes when their token estimate exceeds 200,000.
 Requires OpenCode 2.0.30 or later with Effect v4 support.
 
