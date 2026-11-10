@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import type { Plugin } from "@opencode/plugin/effect";
 import { Session } from "@opencode/schema/session";
 import type { SessionInbox } from "@opencode/schema/session-inbox";
-import { Clock, Effect, Logger, Stream } from "effect";
+import { Clock, Deferred, Effect, Logger, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { mockDeep } from "vitest-mock-extended";
 import plugin from "../src/index.ts";
@@ -56,6 +56,67 @@ it.effect("new execution cancels only that session's timer", () => Effect.gen(fu
     ...finished("idle", 200_001),
   ], { idleMinutes: 1 });
   expect(requests).toEqual([{ sessionID: "ses_idle", at: 60_000 }]);
+}));
+
+it.effect("new inbox input cancels a pending timer", () => Effect.gen(function* () {
+  const { requests } = yield* run([
+    ...finished("cancelled", 200_001),
+    mockDeep<Extract<Event, { type: "session.inbox.enqueued" }>>({
+      type: "session.inbox.enqueued", data: { sessionID: Session.ID.make("ses_cancelled") },
+    }),
+  ]);
+  expect(requests).toEqual([]);
+}));
+
+it.effect.each([
+  "session.inbox.enqueued",
+  "session.execution.started",
+  "session.compaction.started",
+] satisfies Array<Event["type"]>)("%s does not interrupt a compaction request", (type) => Effect.gen(function* () {
+  const events = yield* Queue.unbounded<Event>();
+  const allowWake = yield* Deferred.make<void>();
+  const ctx = mockDeep<Plugin.Context>({ options: {} });
+  let admitted = false;
+  let woke = false;
+  ctx.event.subscribe.mockReturnValue(Stream.fromQueue(events));
+  ctx.session.get.mockReturnValue(Effect.succeed(mockDeep<Session.Info>({ parentID: undefined })));
+  ctx.session.compact.mockImplementation(({ sessionID }) => Effect.gen(function* () {
+    admitted = true;
+    yield* Queue.offer(events, mockDeep<Event>({ type, data: { sessionID } }));
+    yield* Deferred.await(allowWake);
+    woke = true;
+    return mockDeep<SessionInbox.Compaction>();
+  }));
+
+  yield* plugin.effect(ctx);
+  yield* Queue.offerAll(events, finished("large", 200_001));
+  yield* TestClock.adjust("54 minutes");
+  expect(admitted).toBe(true);
+  expect(woke).toBe(false);
+
+  yield* Deferred.succeed(allowWake, undefined);
+  yield* TestClock.adjust("0 seconds");
+  expect(woke).toBe(true);
+}));
+
+it.effect("plugin shutdown interrupts an in-flight compaction request", () => Effect.gen(function* () {
+  const ctx = mockDeep<Plugin.Context>({ options: {} });
+  let admitted = false;
+  let interrupted = false;
+  ctx.event.subscribe.mockReturnValue(Stream.fromIterable(finished("large", 200_001)));
+  ctx.session.get.mockReturnValue(Effect.succeed(mockDeep<Session.Info>({ parentID: undefined })));
+  ctx.session.compact.mockReturnValue(Effect.gen(function* () {
+    admitted = true;
+    return yield* Effect.never;
+  }).pipe(Effect.onInterrupt(() => Effect.sync(() => { interrupted = true; }))));
+
+  yield* Effect.scoped(Effect.gen(function* () {
+    yield* plugin.effect(ctx);
+    yield* TestClock.adjust("54 minutes");
+    expect(admitted).toBe(true);
+    expect(interrupted).toBe(false);
+  }));
+  expect(interrupted).toBe(true);
 }));
 
 it.effect("skips usage equal to the token limit", () => Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import { Plugin } from "@opencode/plugin/effect";
 import type { SessionID } from "@opencode/schema/session-id";
-import { Duration, Effect, FiberMap, HashMap, HashSet, Option, Ref, Schema, Stream } from "effect";
+import { Duration, Effect, FiberMap, HashMap, HashSet, Option, Ref, Schema, Scope, Stream } from "effect";
 
 const Options = Schema.Struct({
   idleMinutes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)).pipe(
@@ -19,6 +19,7 @@ export default Plugin.define({
     Effect.gen(function* () {
       const rawOptions = ctx.options;
       const options: Options = yield* Schema.decodeEffect(Options)(rawOptions).pipe(Effect.orDie);
+      const pluginScope = yield* Scope.Scope;
 
       const sessionTokens = yield* Ref.make(HashMap.empty<SessionID, number>());
       const timers = yield* FiberMap.make();
@@ -40,8 +41,9 @@ export default Plugin.define({
             yield* Ref.update(sessionTokens, HashMap.remove(sessionID));
             yield* ctx.session.compact({ sessionID });
           }).pipe(
-            Effect.delay(Duration.minutes(options.idleMinutes)),
             Effect.catch((e) => Effect.logError("oc-idle compaction failed", { sessionID, e })),
+            Effect.forkIn(pluginScope),
+            Effect.delay(Duration.minutes(options.idleMinutes)),
           ),
         );
       });
